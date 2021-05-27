@@ -4,7 +4,7 @@
 
 |                             课程                             |                             介绍                             |                     状态                      |
 | :----------------------------------------------------------: | :----------------------------------------------------------: | :-------------------------------------------: |
-|     [MIT-6.NULL](https://missing-semester-cn.github.io/)     |               介绍了Shell, git, vim等诸多工具                |                    TBC                    |
+|     [MIT-6.NULL](https://missing-semester-cn.github.io/)     |               介绍了Shell, git, vim等诸多工具                |                    N/A                    |
 |               [UCB-CS61A](https://cs61a.org/)                | SICP，讲解函数式编程、OOP。学习Scheme、SQL等；最后实现了一个Scheme解释器 | [CPLT](https://github.com/ZachVec/CS61A-SICP) |
 |          [UCB-CS61B](https://sp18.datastructur.es/)          |                           数据结构                           |                      TBC                      |
 |          [CMU-15213](https://www.cs.cmu.edu/~213/)           |                 前半部分讲计组，后半部分讲OS                 |                      TBC                      |
