@@ -19,7 +19,7 @@
 |          [UCB-CS61B](https://sp18.datastructur.es/)          |                数据结构                 |        Java         |     CS61A     |                            TBA                            |
 |          [CMU-15213](https://www.cs.cmu.edu/~213/)           |        计算机组成原理、操作系统         |       汇编、C       |     CS61A     | [WIP](https://github.com/ZachVec/15213-CSAPP/tree/master) |
 | [MIT-6.S081](https://pdos.csail.mit.edu/6.S081/2020/schedule.html) |                操作系统                 |          C          |   CMU-15213   |         [CPLT](https://github.com/ZachVec/MIT-6.S081)          |
-|          [Stanford-CS144](https://cs144.github.io/)          |               计算机网络                |         C++         |     CS61B     |                            TBA                            |
+|          [Stanford-CS144](https://cs144.github.io/)          |               计算机网络                |         C++         |     CS61B     |                            WIP                            |
 
 ## 计算机进阶部分
 
