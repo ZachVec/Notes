@@ -1,6 +1,6 @@
 # Lecture #01: Relational Model & Relational Algebra
 
-> This note if copied from [official](https://15445.courses.cs.cmu.edu/fall2020/notes/01-introduction.pdf).
+> This note is copied from [official](https://15445.courses.cs.cmu.edu/fall2020/notes/01-introduction.pdf).
 
 ## 1 Databases
 
