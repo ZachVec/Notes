@@ -19,11 +19,15 @@ SELECT CAST(year AS VARCHAR) || some_strings   -- if you are going to concatenat
 FROM some_table;
 ```
 
+---
+
 **Aggregates**
 
 Aggregate function consists of `COUNT()`, `AVG()`, `MIN()`, `MAX()` and `SUM()`. These functions will produce only one aggregated results for each group or the whole relation, i.e., table, if the group is not specified.
 
 Additionally, if you would like to filer the results using the value provided by aggregate functions, use `HAVING` clause instead of `WHERE` clause.
+
+---
 
 **Window Functions**
 
