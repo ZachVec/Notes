@@ -16,10 +16,11 @@
 | :----------------------------------------------------------: | :--------: | :-------------------------------------------: |
 |     [MIT-6.NULL](https://missing-semester-cn.github.io/)     |  工具学习  |                      N/A                      |
 |               [UCB-CS61A](https://cs61a.org/)                |    SICP    | [CPLT](https://github.com/ZachVec/CS61A-SICP) |
-|          [UCB-CS61B](https://sp18.datastructur.es/)          |  数据结构  |                      TBA                      |
+|          [UCB-CS61B](https://sp18.datastructur.es/)          |  数据结构  |                      WIP                      |
 |          [CMU-15213](https://www.cs.cmu.edu/~213/)           |    ICS     |  [WIP](https://github.com/ZachVec/CMU-15213)  |
 | [MIT-6.S081](https://pdos.csail.mit.edu/6.S081/2020/schedule.html) |  操作系统  | [CPLT](https://github.com/ZachVec/MIT-6.S081) |
-|          [Stanford-CS144](https://cs144.github.io/)          | 计算机网络 |                      WIP                      |
+|          [Stanford-CS144](https://cs144.github.io/)          | 计算机网络 |                      CPLT                     |
+|          [CMU-15445](https://cs144.github.io/)               |   数据库   |                      WIP                      |
 
 ## 计算机进阶部分
 

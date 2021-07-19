@@ -6,7 +6,7 @@ The homework #1 is quiet simple if you are already familiar with SQL and it's ad
 
 The specification of homework1 can be found [here](https://15445.courses.cs.cmu.edu/fall2020/homework1/). Before working on the homework, you may need to check if your sqlite3 DBMS has been properly installed and database [musicbrainz](https://15445.courses.cs.cmu.edu/fall2020/files/musicbrainz-cmudb2020.db.gz) has been downloaded. Just follow the instructions in guidance and you will be fine.
 
-Note: the database can be extremely hard to download if you are in countries or regions behind a firewall.
+Note: the database can be extremely hard to download and time-consuming if you are in countries or regions behind a firewall.
 
 ## Summary
 
@@ -15,7 +15,7 @@ Note: the database can be extremely hard to download if you are in countries or 
 `CAST` function casts variables to other type with the syntax like:
 
 ```sql
-SELECT CAST(year AS VARCHAR) || some_strings   -- if you are going to concatenate an INT with string
+SELECT CAST(year AS VARCHAR) || some_strings   -- if you are concatenating an INT with string
 FROM some_table;
 ```
 
@@ -104,7 +104,7 @@ We will have
 
 As concluded in the provided [note](https://15445.courses.cs.cmu.edu/fall2020/notes/02-advancedsql.pdf), nested queries can show up in almost any part of query. But in my practice, nested queries never appeared in `SELECT` Output targets, can be replaced with `WITH` clause and be more readable. The only part the nested query shows up is the `WHERE` clause.
 
-In my practice, if you are gonna select those with certain criterion like `id = some_kinda_id`, the nested query could help you out with that without using more `INNER JOIN`s, which would significantly harm the performance.
+In my practice, if you are gonna select those with certain criterion like `id = some_kinda_id`, the nested query could help you out with that without using more `INNER JOIN`s, which would significantly boost up the performance.
 
 For example, queries using nested query:
 
@@ -123,5 +123,5 @@ FROM artist
 WHERE artist_type = 'Person';
 ```
 
-The difference can be hard to tell if the number of tuples is not that many, but it can be much more apparent in more complicated queries.
+The difference is hard to tell if the number of tuples is not that many though, whereas it can be much more apparent in more complicated queries.
 
