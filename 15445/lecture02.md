@@ -1,5 +1,5 @@
 ---
-title : Lecture #03: Database Storage
+title : Lecture 03: Database Storage I
 author: vector
 source: https://15445.courses.cs.cmu.edu/fall2020/notes/03-storage1.pdf
 ---
