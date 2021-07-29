@@ -93,7 +93,7 @@ In the n-ary storage model, the DBMS stores all of the attributes for a single t
 
 Not good for scanning large portions of the table and/or a subset of the attributes. This is because it pollutes the buffer pool by fetching data that is not needed for processing the query.
 
-![row store](./assets/row_store.png)
+![row store](./assets/RowStore.svg)
 
 ### Decomposition Storage Model (DSM)
 
@@ -112,4 +112,4 @@ To put the tuples back together when using a column store, there are two common 
 
 A less common approach is to use *embedded tuple ids*. Here, for every attribute in the columns, the DBMS stores a tuple id (ex: a primary key) with it. The system then would also store a mapping to tell it how to jump to every attribute that has that id. Note that this method has a large storage overhead because it needs to store a tuple id for every attribute entry.
 
-![col store](./assets/col_store.png)
+![col store](./assets/ColStore.svg)
