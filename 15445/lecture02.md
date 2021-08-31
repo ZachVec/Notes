@@ -1,152 +1,310 @@
----
-title : Lecture 03: Database Storage I
-author: vector
-source: https://15445.courses.cs.cmu.edu/fall2020/notes/03-storage1.pdf
----
+# Intermediate SQL
+
+## 1	Relational Languages
+
+Edgar Codd published a major paper on relational models in the early 1970s. Originally, he only defined the mathematical notation for how a DBMS could execute queries on a relational model DBMS. 
+
+The user only needs to specify the result that they want using a declarative language (i.e., SQL). The DBMS is responsible for determining the most efficient plan to produce that answer. 
+
+Relational algebra is based on **sets** (unordered, no duplicates). SQL is based on **bags** (unordered, allows duplicates).
+
+## 2	SQL History
+
+Declarative query language for relational databases. It was originally developed in the 1970s as part of the IBM System R project. IBM originally called it “SEQUEL” (Structured English Query Language). The name changed in the 1980s to just “SQL” (Structured Query Language). 
+
+The language is comprised of different classes of commands: 
+
+1. **Data Manipulation Language** (DML): SELECT, INSERT, UPDATE, and DELETE statements. 
+2. **Data Definition Language** (DDL): Schema definitions for tables, indexes, views, and other objects.
+3. **Data Control Language** (DCL): Security, access controls. 
+
+SQL is not a dead language. It is being updated with new features every couple of years. SQL-92 is the minimum that a DBMS has to support to claim they support SQL. Each vendor follows the standard to a certain degree but there are many proprietary extensions.
+
+## 3	Aggregates
+
+First of all, the example database demonstrated in this lecture can be created by following SQL commands:
+
+```sql
+CREATE TABLE student (
+  sid INT PRIMARY KEY,
+  name VARCHAR(16),
+  login VARCHAR(32) UNIQUE,
+  age SMALLINT,
+  gpa FLOAT
+);
+
+CREATE TABLE course (
+  cid VARCHAR(32) PRIMARY KEY,
+  name VARCHAR(32) NOT NULL
+);
+
+CREATE TABLE enrolled (
+  sid INT REFERENCES student (sid),
+  cid VARCHAR(32) REFERENCES course (cid),
+  grade CHAR(1)
+);
+```
 
 
-# Lecture #03: Database Storage (Part I)
 
-## 1	Storage
+An aggregation function takes in a bag of tuples as its input and then produces a single scalar value as its output. Aggregate functions can only be used in SELECT output list.
 
-We will focus on a “disk-oriented” DBMS architecture that assumes that primary storage location of the
-database is on non-volatile disk.
+Example: Get # of students with a `@cs` login. The following three queries are equivalent:
 
-At the top of the storage hierarchy, you have the devices that are closest to the CPU. This is the fastest
-storage, but it is also the smallest and most expensive. The further you get away from the CPU, the larger
-but slower the storage devices get. These devices also get cheaper per GB.
+```sql
+SELECT COUNT(*) FROM student WHERE login LIKE '%@cs';
+```
 
-**Volatile Devices**:
+```sql
+SELECT COUNT(login) FROM student WHERE login LIKE '%@cs';
+```
 
-- Volatile means that if you pull the power from the machine, then the data is lost.
-- Volatile storage supports fast random access with byte-addressable locations. This means that the program can jump to any byte address and get the data that is there.
-- For our purposes, we will always refer to this storage class as “memory”.
-
-**Non-Volatile Devices:**
-
-- Non-volatile means that the storage device does not need to be provided continuous power in order for the device to retain the bits that it is storing.
-- It is also block/page addressable. This means that in order to read a value at a particular offset, the program first has to load the 4 KB page into memory that holds the value the program wants to read.
-- Non-volatile storage is traditionally better at sequential access (reading multiple contiguous chunks of data at the same time).
-- We will refer to this as “disk”. We will not make a (major) distinction between solid-state storage (SSD) and spinning hard drives (HDD).
-
-There is also a new class of storage devices that are becoming more popular called persistant memory. These devices are designed to be the best of both worlds: almost as fast as DRAM with the persistence of disk. We will not cover these devices in this course.
-
-Since the system assumes that the database is stored on disk, the components of the DBMS are responsible for figuring out how to move data between non-volatile disk and volatile memory since the system cannot operate on the data directly on disk.
-
-We will focus on how we can hide the latency of the disk rather than focusing on optimizations with registers and caches since getting data from disk is so slow. If reading data from the L1 cache reference took half a second, reading from an SSD would take 1.7 days, and reading from an HDD would take 16.5 weeks.
-
-## 2	Disk-Oriented DBMS Overview
-
-The database is all on disk, and the data in database files is organized into pages, with the first page being the directory page. In order to operate on the data, the DBMS needs to bring the data into memory. It does this by having a buffer pool that manages the movement of data back and forth between disk and memory. The DBMS also has an execution engine that will execute queries. The execution engine will ask the buffer pool for a specific page, and the buffer pool will take care of bringing that page into memory and giving the execution engine a pointer to that page in memory. The buffer pool manager will ensure that the page is there while the execution engine is operating on that part of memory.
+```sql
+SELECT COUNT(1) FROM student WHERE login LIKE '%@cs';
+```
 
 
-## 3	DBMS vs. OS	
 
-A high-level design goal of the DBMS is to support databases that exceed the amount of memory available. Since reading/writing to disk is expensive, it must be managed carefully. We do not want large stalls from fetching something from disk to slow down everything else. We want the DBMS to be able to process other queries while it is waiting to get the data from disk.
+Can use multiple aggregates within a single SELECT statement:
 
-This high-level design goal is like virtual memory, where there is a large address space and a place for the OS to bring in pages from disk.
+```sql
+SELECT AVG(gpa), COUNT(sid) 
+FROM student WHERE login LIKE '%@cs';
+```
 
-One way to achieve this virtual memory is by using `mmap` to map the contents of a file in a process’ address space, which makes the OS responsible for moving pages back and forth between disk and memory. Unfortunately, this means that if `mmap` hits a page fault, the process will be blocked.
+Some aggregate functions support the DISTINCT keyword:
 
-- You never want to use `mmap` in your DBMS if you need to write.
-- The DBMS (almost) always wants to control things itself and can do a better job at it since it knows more about the data being accessed and the queries being processed.
-- The operating system is not your friend.
+```sql
+SELECT COUNT(DISTINCT login) 
+FROM student WHERE login LIKE '%@cs';
+```
 
-It is possible to use the OS by using:
 
-- madvise: Tells the OS know when you are planning on reading certain pages.
-- mlock: Tells the OS to not swap memory ranges out to disk.
-- msync: Tells the OS to flush memory ranges out to disk.
 
-We do not advise using `mmap` in a DBMS for correctness and performance reasons.
+Output of other columns outside of an aggregate is undefined (`e.cid` is undefined below)
 
-Even though the system will have functionalities that seem like something the OS can provide, having the DBMS implement these procedures itself gives it better control and performance.
+```sql
+SELECT AVG(s.gpa), e.cid 
+FROM enrolled AS e, student AS s 
+WHERE e.sid = s.sid;
+```
 
-## 4	File Storage
+Thus, other columns outside aggregate must be aggregated or used in a GROUP BY command:
 
-In its most basic form, a DBMS stores a database as files on disk. Some may use a file hierarchy, others may use a single file (e.g., SQLite).
+```sql
+SELECT AVG(s.gpa), e.cid 
+FROM enrolled AS e, student AS s
+WHERE e.sid = s.sid
+GROUP BY e.cid;
+```
 
-The OS does not know anything about the contents of these files. Only the DBMS knows how to decipher
-their contents, since it is encoded in a way specific to the DBMS.
 
-The DBMS’s *storage manager* is responsible for managing a database’s files. It represents the files as a
-collection of pages. It also keeps track of what data has been read and written to pages as well how much
-free space there is in these pages.
 
-## 5	Database Pages
+`HAVING`: Filters output results after aggregation. Like a WHERE clause for a GROUP BY
 
-The DBMS organizes the database across one or more files in fixed-size blocks of data called *pages*. Pages can contain different kinds of data (tuples, indexes, etc). Most systems will not mix these types within pages. Some systems will require that pages are *self-contained*, meaning that all the information needed to read each page is on the page itself.
+```sql
+SELECT AVG(s.gpa) AS avg_gpa, e.cid
+FROM enrolled AS e, student AS s
+WHERE e.sid = s.sid
+GROUP BY e.cid
+HAVING avg_gpa > 3.9;
+```
 
-Each page is given a unique identifier. If the database is a single file, then the page id can just be the file offset. Most DBMSs have an indirection layer that maps a page id to a file path and offset. The upper levels of the system will ask for a specific page number. Then, the storage manager will have to turn that page number into a file and an offset to find the page.
+## 4	String Operations
 
-Most DBMSs uses fixed-size pages to avoid the engineering overhead needed to support variable-sized pages. For example, with variable-size pages, deleting a page could create a hole in files that the DBMS cannot easily fill with new pages.
+The SQL standard says that strings are **case sensitive** and **single-quotes** only. There are functions to manipulate strings that can be used in any part of a query.
 
-There are three concepts of pages in DBMS:
+**Pattern Matching:** The **LIKE** keyword is used for string matching in predicates.
 
-1. Hardware page (usually 4KB).
-2. OS page (4KB).
-3. Database page (1-16KB).
+- `%` matches any substrings (including empty).
+- `_` matches any one character.
 
-The storage device guarantees an atomic write of the size of the hardware page. If the hardware page is 4 KB and the system tries to write 4 KB to the disk, either all 4 KB will be written, or none of it will. This means that if our database page is larger than our hardware page, the DBMS will have to take extra measures to ensure that the data gets written out safely since the program can get partway through writing a database page to disk when the system crashes.
+**Example:**
 
-## 6	Database Heap
+```sql
+SELECT COUNT(*) FROM student WHERE login LIKE '%@c_';
+```
 
-There are a couple ways to find the location of the page a DBMS wants on the disk, and a heap file organization is one of those ways.
 
-A *heap file* is an unordered collection of pages where tuples are stored in random order.
 
-The DBMS can locate a page on disk given a `page_id` by using a linked list of pages or a page directory.
+**Concatenation**: Two vertical bars (`||`) will concatenate two or more strings together into a single string.
 
-1. **Linked List**: Header page holds pointers to a list of free pages and a list of data pages. However, if the DBMS is looking for a specific page, it has to do a sequential scan on the data page list until it finds the page it is looking for.
-2. **Page Directory**: DBMS maintains special pages that track locations of data pages along with the amount of free space on each page.
+## 5	Output Redirection
 
-## 7 	Page Layout
+Instead of having the result a query returned to the client (e.g., terminal), you can tell the DBMS to store the results into another table. You can then access this data in subsequent queries.
 
-Every page includes a header that records meta-data about the page’s contents:
+- **New Table**: Store the output of the query into a new (permanent) table.
 
-- Page size.
-- Checksum.
-- DBMS version.
-- Transaction visibility.
-- Self-containment. (Some systems like Oracle require this.)
+  ```sql
+  SELECT DISTINCT cid INTO CourseIds FROM enrolled;
+  ```
 
-A strawman approach to laying out data is to keep track of how many tuples the DBMS has stored in a page and then append to the end every time a new tuple is added. However, problems arise when tuples are deleted or when tuples have variable-length attributes.
+- **Existing Table**: Store the output of the query into a table that already exists in the database. The target table must have the same number of columns with the same types as the target table, but the names of the columns in the output query do not have to match.
 
-There are two main approaches to laying out data in pages: (1) slotted-pages and (2) log-structured.
+  ```sql
+  INSERT INTO CourseIds (SELECT DISTINCT cid FROM enrolled);
+  ```
 
-**Slotted Pages:** Page maps slots to offsets.
+## 6	Output Control
 
-- Most common approach used in DBMSs today.
-- Header keeps track of the number of used slots, the offset of the starting location of the last used slot, and a slot array, which keeps track of the location of the start of each tuple.
-- To add a tuple, the slot array will grow from the beginning to the end, and the data of the tuples will grow from end to the beginning. The page is considered full when the slot array and the tuple data meet.
+Since results SQL are unordered, you have to use the `ORDER BY` clause to impose a sort on tuples:
 
-Log-Structured: Instead of storing tuples, the DBMS only stores log records.
+```sql
+SELECT sid FROM enrolled WHERE cid = '15-721'
+ORDER BY grade DESC;
+```
 
-- Stores records to file of how the database was modified (insert, update, deletes).
-- To read a record, the DBMS scans the log file backwards and “recreates” the tuple.
-- Fast writes, potentially slow reads.
-- Works well on append-only storage because the DBMS cannot go back and update the data.
-- To avoid long reads, the DBMS can have indexes to allow it to jump to specific locations in the log. It can also periodically compact the log. (If it had a tuple and then made an update to it, it could compact it down to just inserting the updated tuple.) The issue with compaction is that the DBMS ends up with write amplification. (It re-writes the same data over and over again.)
+You can use multiple ORDER BY clauses to break ties or do more complex sorting:
 
-## 8    Tuple Layout
+```sql
+SELECT sid FROM enrolled WHERE cid = '15-721'
+ORDER BY grade DESC, sid ASC;
+```
 
-A tuple is essentially a sequence of bytes. It is the DBMS’s job to interpret those bytes into attribute types and values.
+You can also use any arbitrary expression in the `ORDER BY` clause:
 
-**Tuple Header:** Contains meta-data about the tuple.
+```sql
+SELECT sid FROM enrolled WHERE cid = '15-721'
+ORDER BY UPPER(grade) DESC, sid + 1 ASC;
+```
 
-- Visibility information for the DBMS’s concurrency control protocol (i.e., information about which transaction created/modified that tuple).
-- Bit Map for `NULL` values.
-- Note that the DBMS does not need to store meta-data about the schema of the database here.
 
-**Tuple Data:** Actual data for attributes.
 
-- Attributes are typically stored in the order that you specify them when you create the table.
-- Most DBMSs do not allow a tuple to exceed the size of a page.
+By default, the DBMS will return all of the tuples produced by the query. You can use the LIMIT clause to restrict the number of result tuples:
 
-**Unique Identifier:**
+```sql
+SELECT sid, name FROM student WHERE login LIKE '%@cs'
+LIMIT 10;
+```
 
-- Each tuple in the database is assigned a unique identifier.
-- Most common: `page_id` + (`offset` or `slot`).
-- An application **cannot** rely on these ids to mean anything.
+Can also provide an offset to return a range in the results:
 
-**Denormalized Tuple Data:** If two tables are related, the DBMS can “pre-join” them, so the tables end up on the same page. This makes reads faster since the DBMS only has to load in one page rather than two separate pages. However, it makes updates more expensive since the DBMS needs more space for each tuple.
+```sql
+SELECT sid, name FROM student WHERE login LIKE '%@cs'
+LIMIT 10 OFFSET 20;
+```
+
+
+
+Unless you use an ORDER BY clause with a LIMIT, the DBMS could produce different tuples in the result on each invocation of the query because the relational model does not impose an ordering.
+
+## 7	Nested Queries
+
+Invoke queries inside of other queries to execute more complex logic within a single query. The scope of outer query is included in inner query (i.e. inner query can access attributes from outer query), but not the other way around.
+
+Inner queries can appear in almost any part of a query:
+
+1. `SELECT` Output Targets:
+
+   ```sql
+   SELECT (SELECT 1) AS one FROM student;
+   ```
+
+2. `FROM` Clause:
+
+   ```sql
+   SELECT name
+   FROM student AS s, (SELECT sid FROM enrolled) AS e
+   WHERE s.sid = e.sid;
+   ```
+
+3. `WHERE` Clause:
+
+   ```sql
+   SELECT name FROM student
+   WHERE sid IN ( SELECT sid FROM enrolled );
+   ```
+
+Example: Get the names of students that are enrolled in ‘15-445’.
+
+```sql
+SELECT name FROM student
+WHERE sid IN ( SELECT sid FROM enrolled WHERE cid = '15-445' );
+```
+
+
+
+**Nest Query Results Expressions:**
+
+- **ALL**: Must satisfy expression for all rows in sub-query.
+- **ANY**: Must satisfy expression for at least one row in sub-query.
+- **IN**: Equivalent to =ANY().
+- **EXISTS**: At least one row is returned.
+
+
+
+## 8	Window Functions
+
+Performs “moving” calculation across set of tuples. Like an aggregation but it still returns the original tuples.
+
+**Functions**: The window function can be any of the aggregation functions that we discussed above. There are also also special window functions:
+
+- `ROW_NUMBER`: The number of the current row. 
+- `RANK`: The order position of the current row. 
+
+**Grouping**: The `OVER` clause specifies how to group together tuples when computing the window function. Use `PARTITION BY` to specify group.
+
+```SQL
+SELECT cid, sid, ROW_NUMBER() OVER (PARTITION BY cid)
+FROM enrolled ORDER BY cid;
+```
+
+You can also put an `ORDER BY` within `OVER` to ensure a deterministic ordering of results even if database changes internally.
+
+```sql
+SELECT *, ROW_NUMBER() OVER (ORDER BY cid)
+FROM enrolled ORDER BY cid;
+```
+
+Important: The DBMS computes `RANK` after the window function sorting, whereas it computes `ROW_NUMBER` before the sorting.
+
+## 9	Common Table Expressions
+
+Common Table Expressions (CTEs) are an alternative to windows or nested queries to writing more complex queries. One can think of a CTE like a temporary table for just one query. 
+
+The `WITH` clause binds the output of the inner query to a temporary result with that name. 
+
+Example: Generate a CTE called `cteName` that contains a single tuple with a single attribute set to “1”. The query at the bottom then just returns all the attributes from `cteName`
+
+```sql
+WITH cteName AS (
+	SELECT 1
+)
+SELECT * FROM cteName;
+```
+
+You can bind output columns to names before the AS:
+
+```sql
+WITH cteName (col1, col2) AS (
+	SELECT 1, 2
+)
+SELECT col1 + col2 FROM cteName;
+```
+
+A single query can contain multiple CTE declarations:
+
+```sql
+WITH cte1 (col1) AS (
+	SELECT 1
+),
+cte2 (col2) AS (
+	SELECT 2
+)
+SELECT * FROM cte1, cte2;
+```
+
+Adding the RECURSIVE keyword after WITH allows a CTE to reference itself.
+
+Example: Print the sequence of numbers from 1 to 10.
+
+```sql
+WITH RECURSIVE cteSource (counter) AS (
+  SELECT 1
+  UNION ALL
+  SELECT counter + 1 FROM cteSource
+  WHERE counter < 10
+)
+SELECT * FROM cteSource;
+```
+

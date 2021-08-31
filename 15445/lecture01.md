@@ -1,310 +1,137 @@
-# Intermediate SQL
+# Lecture #01: Relational Model & Relational Algebra
 
-## 1	Relational Languages
+> This note is copied from [official](https://15445.courses.cs.cmu.edu/fall2020/notes/01-introduction.pdf).
 
-Edgar Codd published a major paper on relational models in the early 1970s. Originally, he only defined the mathematical notation for how a DBMS could execute queries on a relational model DBMS. 
+## 1 Databases
 
-The user only needs to specify the result that they want using a declarative language (i.e., SQL). The DBMS is responsible for determining the most efficient plan to produce that answer. 
+A *database* is an organized collection of inter-related data that models some aspect of the real-world (e.g., modeling the students in a class or a digital music store). People often confuse “databases” with “database management systems” (e.g., **MySQL**, **Oracle**, **MongoDB**). A database management system (**DBMS**) is the software that manages a database. 
 
-Relational algebra is based on **sets** (unordered, no duplicates). SQL is based on **bags** (unordered, allows duplicates).
+Consider a database that models a digital music store (e.g., Spotify). Let the database hold information about the artists and which albums those artists have released.
 
-## 2	SQL History
+## 2 Flat File Strawman
 
-Declarative query language for relational databases. It was originally developed in the 1970s as part of the IBM System R project. IBM originally called it “SEQUEL” (Structured English Query Language). The name changed in the 1980s to just “SQL” (Structured Query Language). 
+Database is stored as comma-separated value (CSV) files that the DBMS manages. Each entity will be stored in its own file. The application has to parse files each time it wants to read or update records. Each entity has its own set of attributes, so in each file, different records are delimited by new lines, while each of the corresponding attributes within a record are delimited by a comma. 
 
-The language is comprised of different classes of commands: 
+Keeping along with the digital music store example, there would be two files: one for artist and the other for album. An artist could have a name, year, and country attributes, while an album has name, artist and year attributes.
 
-1. **Data Manipulation Language** (DML): SELECT, INSERT, UPDATE, and DELETE statements. 
-2. **Data Definition Language** (DDL): Schema definitions for tables, indexes, views, and other objects.
-3. **Data Control Language** (DCL): Security, access controls. 
+### Issues with Flat File
 
-SQL is not a dead language. It is being updated with new features every couple of years. SQL-92 is the minimum that a DBMS has to support to claim they support SQL. Each vendor follows the standard to a certain degree but there are many proprietary extensions.
+- **Data Integrity** 
+  - How do we ensure that the artist is the same for each album entry? 
+  - What if somebody overwrites the album year with an invalid string? 
+  - How do we store the theater there are multiple artists on one album?
+- **Implementation**
+  - How do you find a particular record?
+  - What if we now want to create a new application that uses the same database?
+  - What if two threads try to write to the same file at the same time? 
+- **Durability**
+  - What if the machine crashes while our program is updating a record?
+  - What if we want to replicate the database on multiple machines for high availability?
 
-## 3	Aggregates
+## 3 Database Management System
 
-First of all, the example database demonstrated in this lecture can be created by following SQL commands:
+A ***DBMS*** is a software that allows applications to store and analyze information in a database.
 
-```sql
-CREATE TABLE student (
-  sid INT PRIMARY KEY,
-  name VARCHAR(16),
-  login VARCHAR(32) UNIQUE,
-  age SMALLINT,
-  gpa FLOAT
-);
+A general-purpose DBMS is designed to allow the definition, creation, querying, update, and administration of databases.
 
-CREATE TABLE course (
-  cid VARCHAR(32) PRIMARY KEY,
-  name VARCHAR(32) NOT NULL
-);
+> **Early DBMSs**
+>
+> Database applications were difficult to build and maintain because there was a tight coupling between logical and physical layers. The logical layer is which entities and attributes the database has while the physical layer is how those entities and attributes are being stored. Early on, the physical layer was defined in the application code, so if we wanted to change the physical layer the application was using, we would have to change all of the code to match the new physical layer.
 
-CREATE TABLE enrolled (
-  sid INT REFERENCES student (sid),
-  cid VARCHAR(32) REFERENCES course (cid),
-  grade CHAR(1)
-);
-```
+## 4 Relational Model
 
+Ted Codd noticed that people were rewriting DBMSs every time they wanted to change the physical layer, so in 1970 he proposed the relational model to avoid this. This relational model has three key points:
 
+- Store database in simple data structures (relations).
+- Access data through high-level language.
+- Physical storage left up to implementation.
 
-An aggregation function takes in a bag of tuples as its input and then produces a single scalar value as its output. Aggregate functions can only be used in SELECT output list.
+A ***data model*** is a collection of concepts for describing the data in a database. The relational model is an example of a data model.
 
-Example: Get # of students with a `@cs` login. The following three queries are equivalent:
+A ***schema*** is a description of a particular collection of data, using a given data model. 
 
-```sql
-SELECT COUNT(*) FROM student WHERE login LIKE '%@cs';
-```
+The relational data model defines three concepts:
 
-```sql
-SELECT COUNT(login) FROM student WHERE login LIKE '%@cs';
-```
+- **Structure**: The definition of relations and their contents. This is the attributes the relations have and the values that those attributes can hold.
+- **Integrity**: Ensure the database’s contents satisfy constraints. An example constraint would be that any value for the year attribute has to be a number.
+- **Manipulation**: How to access and modify a database’s contents.
 
-```sql
-SELECT COUNT(1) FROM student WHERE login LIKE '%@cs';
-```
+A ***relation*** is an unordered set that contains the relationship of attributes that represent entities. Since the relationships are unordered, the DBMS can store them in any way it wants, allowing for optimization. 
 
+A ***tuple*** is a set of attribute values (also known as its ***domain***) in the relation. Originally, values had to be atomic or scalar, but now values can also be lists or nested data structures. Every attribute can be a special value, NULL, which means for a given tuple the attribute is undefined. 
 
+A relation with n attributes is called an *n-ary* relation.
 
-Can use multiple aggregates within a single SELECT statement:
+> **Keys**
+>
+> A relation’s ***primary key*** uniquely identifies a single tuple. Some DBMSs automatically create an internal primary key if you do not define one. A lot of DBMSs have support for autogenerated keys so an application does not have to manually increment the keys. 
+>
+> A ***foreign key*** specifies that an attribute from one relation has to map to a tuple in another relation.
 
-```sql
-SELECT AVG(gpa), COUNT(sid) 
-FROM student WHERE login LIKE '%@cs';
-```
+## 5 Data Manipulation Languages (DMLs)
 
-Some aggregate functions support the DISTINCT keyword:
+A language to store and retrieve information from a database. There are two classes of languages for this:
 
-```sql
-SELECT COUNT(DISTINCT login) 
-FROM student WHERE login LIKE '%@cs';
-```
+- **Procedural**: The query specifies the (high-level) strategy the DBMS should use to find the desired result
+- **Non-Procedural**: The query specifies only what data is wanted and not how to find it.
 
+## 6 Relational Algebra
 
+***Relational Algebra*** is a set of fundamental operations to retrieve and manipulate tuples in a relation. Each operator takes in one or more relations as inputs, and outputs a new relation. To write queries we can “chain” these operators together to create more complex operations.
 
-Output of other columns outside of an aggregate is undefined (`e.cid` is undefined below)
 
-```sql
-SELECT AVG(s.gpa), e.cid 
-FROM enrolled AS e, student AS s 
-WHERE e.sid = s.sid;
-```
 
-Thus, other columns outside aggregate must be aggregated or used in a GROUP BY command:
+***Select***
+Select takes in a relation and outputs a subset of the tuples from that relation that satisfy a selection predicate. The predicate acts like a filter, and we can combine multiple predicates using conjunctions and disjunctions. 
 
-```sql
-SELECT AVG(s.gpa), e.cid 
-FROM enrolled AS e, student AS s
-WHERE e.sid = s.sid
-GROUP BY e.cid;
-```
+Syntax: σ<sub>predicate</sub>(R).
 
 
 
-`HAVING`: Filters output results after aggregation. Like a WHERE clause for a GROUP BY
+***Projection***
+Projection takes in a relation and outputs a relation with tuples that contain only specified attributes. You can rearrange the ordering of the attributes in the input relation as well as manipulate the values. 
 
-```sql
-SELECT AVG(s.gpa) AS avg_gpa, e.cid
-FROM enrolled AS e, student AS s
-WHERE e.sid = s.sid
-GROUP BY e.cid
-HAVING avg_gpa > 3.9;
-```
+Syntax: π<sub>A1,A2,. . . ,An</sub>(R).
 
-## 4	String Operations
 
-The SQL standard says that strings are **case sensitive** and **single-quotes** only. There are functions to manipulate strings that can be used in any part of a query.
 
-**Pattern Matching:** The **LIKE** keyword is used for string matching in predicates.
+***Union***
+Union takes in two relations and outputs a relation that contains all tuples that appear in at least one of the input relations. Note: The two input relations have to have the exact same attributes. 
 
-- `%` matches any substrings (including empty).
-- `_` matches any one character.
+Syntax: (R ∪ S).
 
-**Example:**
 
-```sql
-SELECT COUNT(*) FROM student WHERE login LIKE '%@c_';
-```
 
+***Intersection***
+Intersection takes in two relations and outputs a relation that contains all tuples that appear both of the input relations. Note: The two input relations have to have the exact same attributes. 
 
+Syntax: (R ∩ S).
 
-**Concatenation**: Two vertical bars (`||`) will concatenate two or more strings together into a single string.
 
-## 5	Output Redirection
 
-Instead of having the result a query returned to the client (e.g., terminal), you can tell the DBMS to store the results into another table. You can then access this data in subsequent queries.
+***Difference***
+Difference takes in two relations and outputs a relation that contains all tuples that appear in the first relation but not the second relation. Note: The two input relations have to have the exact same attributes.
 
-- **New Table**: Store the output of the query into a new (permanent) table.
+Syntax: (R − S).
 
-  ```sql
-  SELECT DISTINCT cid INTO CourseIds FROM enrolled;
-  ```
 
-- **Existing Table**: Store the output of the query into a table that already exists in the database. The target table must have the same number of columns with the same types as the target table, but the names of the columns in the output query do not have to match.
 
-  ```sql
-  INSERT INTO CourseIds (SELECT DISTINCT cid FROM enrolled);
-  ```
+***Product***
+Product takes in two relations and outputs a relation that contains all possible combinations for tuples from the input relations. 
 
-## 6	Output Control
+Syntax: (R × S).
 
-Since results SQL are unordered, you have to use the `ORDER BY` clause to impose a sort on tuples:
 
-```sql
-SELECT sid FROM enrolled WHERE cid = '15-721'
-ORDER BY grade DESC;
-```
 
-You can use multiple ORDER BY clauses to break ties or do more complex sorting:
+***Join***
+Join takes in two relations and outputs a relation that contains all the tuples that are a combination of two tuples where for each attribute that the two relations share, the values for that attribute of both tuples is the same.
 
-```sql
-SELECT sid FROM enrolled WHERE cid = '15-721'
-ORDER BY grade DESC, sid ASC;
-```
+ Syntax: (R ⨝ S).
 
-You can also use any arbitrary expression in the `ORDER BY` clause:
 
-```sql
-SELECT sid FROM enrolled WHERE cid = '15-721'
-ORDER BY UPPER(grade) DESC, sid + 1 ASC;
-```
 
+***Observation***
+Relational algebra is a procedural language because it defines the high level-steps of how to compute a query. For example, σ<sub>b_id=102</sub>(*R* ⨝ *S*) is saying to first do the join of **R** and **S** and then do the select, whereas (*R* ⨝ (σ<sub>b_id=102</sub>(*S*))) will do the select on S first, and then do the join. These two statements will actually produce the same answer, but if there is only 1 tuple in S with b_id=102 out of a billion tuples, then (R ⨝ (σ<sub>b_id=102</sub>(*S*))) will be significantly faster than σ<sub>b_id=102</sub>(*R* ⨝ *S*). 
 
-
-By default, the DBMS will return all of the tuples produced by the query. You can use the LIMIT clause to restrict the number of result tuples:
-
-```sql
-SELECT sid, name FROM student WHERE login LIKE '%@cs'
-LIMIT 10;
-```
-
-Can also provide an offset to return a range in the results:
-
-```sql
-SELECT sid, name FROM student WHERE login LIKE '%@cs'
-LIMIT 10 OFFSET 20;
-```
-
-
-
-Unless you use an ORDER BY clause with a LIMIT, the DBMS could produce different tuples in the result on each invocation of the query because the relational model does not impose an ordering.
-
-## 7	Nested Queries
-
-Invoke queries inside of other queries to execute more complex logic within a single query. The scope of outer query is included in inner query (i.e. inner query can access attributes from outer query), but not the other way around.
-
-Inner queries can appear in almost any part of a query:
-
-1. `SELECT` Output Targets:
-
-   ```sql
-   SELECT (SELECT 1) AS one FROM student;
-   ```
-
-2. `FROM` Clause:
-
-   ```sql
-   SELECT name
-   FROM student AS s, (SELECT sid FROM enrolled) AS e
-   WHERE s.sid = e.sid;
-   ```
-
-3. `WHERE` Clause:
-
-   ```sql
-   SELECT name FROM student
-   WHERE sid IN ( SELECT sid FROM enrolled );
-   ```
-
-Example: Get the names of students that are enrolled in ‘15-445’.
-
-```sql
-SELECT name FROM student
-WHERE sid IN ( SELECT sid FROM enrolled WHERE cid = '15-445' );
-```
-
-
-
-**Nest Query Results Expressions:**
-
-- **ALL**: Must satisfy expression for all rows in sub-query.
-- **ANY**: Must satisfy expression for at least one row in sub-query.
-- **IN**: Equivalent to =ANY().
-- **EXISTS**: At least one row is returned.
-
-
-
-## 8	Window Functions
-
-Performs “moving” calculation across set of tuples. Like an aggregation but it still returns the original tuples.
-
-**Functions**: The window function can be any of the aggregation functions that we discussed above. There are also also special window functions:
-
-- `ROW_NUMBER`: The number of the current row. 
-- `RANK`: The order position of the current row. 
-
-**Grouping**: The `OVER` clause specifies how to group together tuples when computing the window function. Use `PARTITION BY` to specify group.
-
-```SQL
-SELECT cid, sid, ROW_NUMBER() OVER (PARTITION BY cid)
-FROM enrolled ORDER BY cid;
-```
-
-You can also put an `ORDER BY` within `OVER` to ensure a deterministic ordering of results even if database changes internally.
-
-```sql
-SELECT *, ROW_NUMBER() OVER (ORDER BY cid)
-FROM enrolled ORDER BY cid;
-```
-
-Important: The DBMS computes `RANK` after the window function sorting, whereas it computes `ROW_NUMBER` before the sorting.
-
-## 9	Common Table Expressions
-
-Common Table Expressions (CTEs) are an alternative to windows or nested queries to writing more complex queries. One can think of a CTE like a temporary table for just one query. 
-
-The `WITH` clause binds the output of the inner query to a temporary result with that name. 
-
-Example: Generate a CTE called `cteName` that contains a single tuple with a single attribute set to “1”. The query at the bottom then just returns all the attributes from `cteName`
-
-```sql
-WITH cteName AS (
-	SELECT 1
-)
-SELECT * FROM cteName;
-```
-
-You can bind output columns to names before the AS:
-
-```sql
-WITH cteName (col1, col2) AS (
-	SELECT 1, 2
-)
-SELECT col1 + col2 FROM cteName;
-```
-
-A single query can contain multiple CTE declarations:
-
-```sql
-WITH cte1 (col1) AS (
-	SELECT 1
-),
-cte2 (col2) AS (
-	SELECT 2
-)
-SELECT * FROM cte1, cte2;
-```
-
-Adding the RECURSIVE keyword after WITH allows a CTE to reference itself.
-
-Example: Print the sequence of numbers from 1 to 10.
-
-```sql
-WITH RECURSIVE cteSource (counter) AS (
-  SELECT 1
-  UNION ALL
-  SELECT counter + 1 FROM cteSource
-  WHERE counter < 10
-)
-SELECT * FROM cteSource;
-```
+A better approach is to say the result you want, and let the **DBMS** decide the steps it wants to take to compute the query. **SQL** will do exactly this, and it is the de facto standard for writing queries on relational model databases.
 

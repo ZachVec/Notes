@@ -1,83 +1,84 @@
 ---
 title : Lecture 07: Tree Indexes I
 author: vector
-source: https://15445.courses.cs.cmu.edu/fall2019/notes/08-trees2.pdf
+source: https://15445.courses.cs.cmu.edu/fall2020/notes/07-trees1.pdf
 ---
 
-# Lecture 08: Tree Indexes II
+# Lecture 07: Tree Indexes I
 
-# 1 Additional Index Usage
+## 1 Table Indexes
 
-**隐式索引(Implicit Index)**：大多数DBMS都会自动建立索引来施加完整性限制(Integrity constraints)。比如基于主键或是或是unique限制建立索引，并基于此维护数据的完整性，如不能插入已经存在的主键等。值得注意的是，大多数DBMS不会建立基于外键的索引，因此需要手动在外键后加上`UNIQUE`修饰来主动建立索引。
+There are a number of different data structures one can use inside of a database system for purposes such as internal meta-data, core data storage, temporary data structures, or table indexes. For table indexes, which may involve queries with range scans.
 
-> 完整性限制第一次出现在《DB Concepts 7th》的第13页，分为Domain Constraints和Referential Integrity。
->
-> 后边比较详细的介绍在第四章，145页。
+<mark>A *table index* is a replica of a subset of a table’s columns that is organized and/or sorted for efficient access using a subset of those attributes.</mark> So instead of performing a sequential scan, the DBMS can lookup the table index’s auxiliary data structure to find tuples more quickly. The DBMS ensures that the contents of the tables and the indexes are always logically in sync.
 
-**部分索引(Partial Index)**：只给整个表的子集建立索引，建立出来的索引就叫部分索引。这样做可能可以减少维护所需开销。
+There exists a trade-off between the number of indexes to create per database. Although more indexes makes looking up queries faster, indexes also use storage and require maintenance. It is the DBMS’s job to figure out the best indexes to use to execute queries.
 
-```sql
-CREATE INDEX idx_foo
-ON foo (a, b)    --- 只取了foo中 a, b 两列
-WHERE c = 'WuTang'; --- 限制了只建立关于'WuTang'的数据的索引
-```
+## 2 B+Tree
 
-**覆盖索引(Covering Index)**：处理一次请求所需的所有属性（或者说数据、列）都在索引里，不需要额外IO访问叶节点的值对应的页。
+<mark>A *B+Tree* is a self-balancing tree data structure that keeps data sorted and allows searches, sequential access, insertion, and deletions in *O(log(n))*.</mark> It is optimized for disk-oriented DBMS’s that read/write large blocks of data.
 
-```sql
-CREATE INDEX idx_foo
-ON foo (a, b);
+Almost every modern DBMS that supports order-preserving indexes uses a B+Tree. There is a specific data structure called a *B-Tree*, but people also use the term to generally refer to a class of data structures. The primary difference between the original *B-Tree* and the B+Tree is that *B-Trees* stores keys and values in all nodes, while B+ trees store values only in leaf nodes. Modern B+Tree implementations combine features from other *B-Tree* variants, such as the sibling pointers used in the B<sup>link</sup>-Tree.
 
-SELECT b FROM foo --- b 在索引中
-WHERE a = 123;    --- a 也在索引中
-```
+<div style="text-align:center"><img src="./assets/BPlusTreeDiagram.svg"></div>
 
-**含列索引(Index Include Columns)**：在建立时，希望额外添加几列到索引中，但不希望索引的键中包含这几列，这样的索引是含列索引。
+Formally, a B+Tree is an M-way search tree with the following properties:
 
-```sql
-CREATE INDEX idx_foo ON foo (a, b) INCLUDE (c);
+- It is perfectly balanced (i.e., every leaf node is at the same depth).
+- Every inner node other than the root is at least half full (M/2 − 1 <= num of keys <= M − 1).
+- Every inner node with k keys has k+1 non-null children.
 
-SELECT b, c FROM foo WHERE a = 123;
-```
+Every node in a B+Tree contains an array of key/value pairs. The keys in these pairs are derived from the attribute(s) that the index is based on. The values will differ based on whether a node is an inner node or a leaf node. For inner nodes, the value array will contain pointers to other nodes. Two approaches for leaf node values are record IDs and tuple data. Record IDs refer to a pointer to the location of the tuple. Leaf nodes that have tuple data store the the actual contents of the tuple in each node.
 
-**函数/表达式索引(Function/Expression Index)**：以表达式或函数的结果而非原值作为索引的键，这样的索引叫函数/表达式索引。
+Arrays at every node are (almost) sorted by the keys.
 
-```sql
-SELECT * FROM users WHERE EXTRACT(dow FROM login) = 2;
+> Visualization of B+ Tree operations including insert, delete and etc. [Click here to start!](https://www.cs.usfca.edu/~galles/visualization/BPlusTree.html)
 
---- in order to boost up query like above, we need to build index
-CREATE INDEX idx_user_login ON users (login); --- no one does this
-CREATE INDEX idx_user_login ON users (EXTRACT(dow FROM login)); --- do this instead
---- dow means day of week, starting from monday as 1.
-```
+### Insertion
 
-> 课上有个印度人问了个类似刻舟求剑的问题：如果函数或是表达式是可变的（即对于同一输入，输出可能不同，比如获得时间戳），那么在建立索引以后插入的数据，应该用建立索引时的状态还是要用插入数据时的状态？
->
-> 对此，andy的回答模棱两可。最终通过在postgres试验得出结果：这个函数或表达式不能是可变的。`Function in index expression must be immutable.`
+To insert a new entry into a B+Tree, one must traverse down the tree and use the inner nodes to figure out which leaf node to insert the key into.
 
-# 2 Trie Index
+1. Find correct leaf *L*.
+2. Add new entry into *L* in sorted order:
+   - If *L* has enough space, the operation is done.
+   - Otherwise split *L* into two nodes *L* and *L<sub>2</sub>*. Redistribute entries evenly and copy up middle key.  Insert index entry pointing to *L<sub>2</sub>* into parent of *L*.
+3. To split an inner node, redistribute entries evenly, but push up the middle key.
 
-> Trie means retrieve tree.
+### Deletion
 
-字典树是一种把键用“位”（最小单元）表示，用来一点一点检查键的前缀，而不是一下子就查整个键的数据结构。如：
+Whereas in inserts we occasionally had to split leaves when the tree got too full, if a deletion causes a tree to be less than half-full, we must merge in order to re-balance the tree.
 
-![Trie](./assets/trie.svg)
+1. Find correct leaf *L*.
+2. Remove the entry:
+   - If *L* is at least half full, the operation is done.
+   - Otherwise, you can try to redistribute, borrowing from sibling.
+   - If redistribution fails, merge *L* and sibling.
+3. If merge occurred, you must delete entry in parent pointing to *L*.
 
-而基数树是字典树的变体，它将字典树纵向压缩，压缩的结果是基数树。如：
+### Selection Conditions
 
-![Radix Tree](./assets/radix_tree.svg)
+Because B+Trees are in sorted order, look ups have fast traversal and also do not require the entire key. The DBMS can use a B+Tree index if the query provides any of the attributes of the search key. This differs from a hash index, which requires all attributes in the search key.
 
-# 3 Inverted Indexes
+<div style="text-align:center"><img src="./assets/PrefixSearch.svg" alt="Figure 2: To perform a prefix search on a B+Tree, one looks at the first attribute on the key, follows the path down and performs a sequential scan across the leaves to find all they keys that one wants."></div>
 
-转置索引存储着 *词 => 有这个词的记录* 的映射。在DBMS中，有时称之为全文搜索索引（full-text search index）。大多数DBMS都支持这个特性。
+### Duplicate Keys
 
-请求类别：
+There are two approaches to duplicate keys in a B+Tree.
 
-- 短语查询：查询有哪些记录包含给定的词，且按照给出词的顺序包含。
-- 近似查询：查询有哪些记录包含两个词，且这两个词之间的距离在n个词以内。
-- 通配查询：查询有哪些记录包含特定的词，这些词能与给出的模式（如正则）匹配。
+The first approach is to append record IDs as part of the key. Since each tuple’s record ID is unique, this will ensure that all the keys are identifiable.
 
-设计选择：
+The second approach is to allow leaf nodes to spill into overflow nodes that contain the duplicate keys. Although no redundant information is stored, this approach is more complex to maintain and modify.
 
-- 存什么：索引至少要存储记录中的词，当然也可以存储额外信息，如词频，位置或者其它元数据。
-- 何时更新：每次表更新时就更新转置索引开销会非常大且极其耗时。因此，大多DBMS会维护一个辅助数据结构，用以“暂存”更新，然后批处理更新。
+### Clustered Indexes
+
+The table is stored in the sort order specified by the primary key, can either be heap- or index-organized storage.
+
+Some DBMSs always use a clustered index, they will automatically make a hidden row id primary key if a table doesn’t have an explicit one, but other DBMS cannot use them at all.
+
+### Heap Clustering
+
+Tuples are sorted in the heap’s pages using the order specified by a clustering index. DBMS can jump directly to the pages if clustering index’s attributes are used to access tuples.
+
+### Index Scan Page Sorting
+
+Since directly retrieving tuples from an unclustered index is inefficient, the DBMS can first figure out all the tuples that it needs and then sort them based on their page id.

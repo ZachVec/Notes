@@ -9,7 +9,7 @@
 - checkpoint1：完成B+树的插入，分裂。
 - checkpoint2：完成B+树的删除，合并，重新分布，以及并发。
 
-### checkpoint1
+## checkpoint1
 
 本部分完成B+树的插入，分裂。在那之前，先介绍下实验中可能碰到麻烦的变量及方法。首先需要明确一点：叶节点的大小和内部节点的大小完全独立，互不影响。
 
@@ -34,6 +34,8 @@
 
 最终，如果按照 `1 2 3 4 5` 的顺序插入到B+树中，B+树应该像如下图所示：
 
-![Insertion](./assets/Insertion_with_split.svg)
+<div style="text-align:center"><img src="./assets/Insertion.svg" alt="Insertion"></div>
 
 checkpoint 1 差不多就这么多。
+
+## checkpoint1

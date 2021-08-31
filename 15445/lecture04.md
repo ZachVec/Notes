@@ -1,142 +1,115 @@
 ---
-title : Lecture 05: Buffer Pools
+title : Lecture 04: Database Storage II
 author: vector
-source: https://15445.courses.cs.cmu.edu/fall2020/notes/05-bufferpool.pdf
+source: https://15445.courses.cs.cmu.edu/fall2020/notes/04-storage2.pdf
 ---
 
-> 本系列主要不再是搬运，而是谈谈个人理解以及一些要点。
+# Lecture #04: Database Storage (Part II)
 
-# Lecture #05: Buffer Pools
+## 1 Data Representation
 
-## 1 Introduction
+The data in a tuple is essentially just byte arrays. It is up to the DBMS to know how to interpret those bytes to derive the values for attributes. A *data representation* scheme is how a DBMS stores the bytes for a value.
 
-在数据库中，由于数据可能远大于内存大小，DBMS需要负责内存管理，即在硬盘与内存之间来回地移动数据，并把由数据移动而引入的开销尽可能地降低。理想情况下，对于查询过程而言，应该有所有的数据看起来好像都放在了内存中。
+There are five high level datatypes that can be stored in tuples: integers, variable-precision numbers, fixedpoint precision numbers, variable length values, and dates/times.
 
-## 2 Locks vs. Latches
+### Integers
 
-我们需要搞清楚 **Locks** 和 **Latches** 的区别：
+Most DBMSs store integers using their “native” C/C++ types as specified by the IEEE-754 standard. These values are fixed length.
 
-**Locks**
+Examples: `INTEGER`, `BIGINT`, `SMALLINT`, `TINYINT`.
 
-- 用来保护数据库内容。每次业务（transaction）在持续时间内都要持有 Locks
-- 更高层、逻辑上的原子性
-- 数据库系统可以把正在运行的 query 持有的 Locks 暴露给用户。
-- Locks 需要能够回滚（rollback）。
+### Variable Precision Numbers
 
-**Latches**
+These are inexact, variable-precision numeric types that use the “native” C/C++ types specified by IEEE-754 standard. These values are also fixed length.
 
-- 用来保护 DBMS 内部数据结构，防止操作进入临界区。每个操作在持续时间内都需要持有 Latches
-- 更底层的原子性。
-- 不需要能够回滚。
+Operations on variable-precision numbers are faster to compute than arbitrary precision numbers because the CPU can execute instructions on them directly. However, there may be rounding errors when performing computations due to the fact that some numbers cannot be represented precisely.
 
-> 这里的 Lock 与操作系统中的 Lock 不一样，相比较而言，Lock 更像是文件系统中的 Log。
->
-> - 它们都是更高层的逻辑锁
-> - Lock 需要能够回滚
-> - 文件系统中虽然不需要回滚，但在Crash Recovery里需要完成没有完成的IO。
->
-> 而这里的 Latch，在我看来与操作系统中的 Lock一致（事实上，我觉得它们就是一个东西）
->
-> - 都是底层的，依赖硬件
-> - 用来保护并发访问的数据
-> - 不需要回滚。
+Examples: `FLOAT`, `REAL`.
 
-## 3 Buffer Pool
+### Fixed-Point Precision Numbers
 
-这里我把 Buffer Poll 叫做 **缓存池**。基本上就是由 DBMS 进程分配的一大块内存区域，用来存放来自硬盘的页。
+These are numeric data types with arbitrary precision and scale. They are typically stored in exact, variablelength binary representation (almost like a string) with additional meta-data that will tell the system things like the length of the data and where the decimal should be.
 
-> 这里的页与OS中的页不是一个东西，基本等价于硬盘中的块。页的大小取决于数据库的实现。典型值为1~16KB。PostgreSQL 中为8KB。
+These data types are used when rounding errors are unacceptable, but the DBMS pays a performance penalty to get this accuracy.
 
-缓存池所在内存区域被组织成一组形式、固定数量的页，组内单个*条目*（entry）叫做*帧*（frame）。当DBMS索要页时，DBMS就在缓存池中寻找页，如果没有找到，系统就会从硬盘中取出该页，放到缓存池里。
+Examples: `NUMERIC`, `DECIMAL`.
 
-### 缓存池元数据（meta-data）
+### Variable-Length Data
 
-为了高效使用缓存池，必须要维护元数据，即页表。与OS的页表类似，DBMS页表的功能如下：
+These represent data types of arbitrary length. They are typically stored with a header that keeps track of the length of the string to make it easy to jump to the next value. It may also contain a checksum for the data.
 
-- 记录着 `page id` 与 `frame` 的映射。
-- 维护着每一页额外的元数据，如：dirty-flag，pin/reference counter等。 reference counter大于0时，不允许驱逐。
+Most DBMSs do not allow a tuple to exceed the size of a single page. The ones that do store the data on a special “overflow” page and have the tuple contain a reference to that page. These overflow pages can contain pointers to additional overflow pages until all the data can be stored.
 
-> 页表(page table) vs. 页目录(page directory)
->
-> - 页表记录的是内存中页在缓存池中的位置，页目录记录的是页在硬盘中的位置。
-> - 页表不需要具有持续性（persistency），而页目录需要具有持续性。
+Some systems will let you store these large values in an external file, and then the tuple will contain a pointer to that file. For example, if the database is storing photo information, the DBMS can store the photos in the external files rather than having them take up large amounts of space in the DBMS. One downside of this is that the DBMS cannot manipulate the contents of this file. Thus, there are no durability or transaction protections.
 
-### 内存分配策略
+Examples: `VARCHAR`, `VARBINARY`, `TEXT`, `BLOB`.
 
-数据库中的内存分配策略分为两种：
+### Dates and Times
 
-- 全局策略：考虑所有正在进行的业务，找到分配内存的最佳策略。使整个workload受益。
-- 局部策略：让单个查询或业务运行得更快，不考虑整个workload。
+Representations for date/time vary for different systems. Typically, these are represented as some unit time (micro/milli)seconds since the unix epoch.
 
-大部分系统都使用混合的策略。
+Examples: `TIME`, `DATE`, `TIMESTAMP`.
 
-## 4 Buffer Pool Optimizations
+### System Catalogs
 
-### Multiple Buffer Pools
+In order for the DBMS to be able to deciphter the contents of tuples, it maintains an internal catalog to tell it meta-data about the databases. The meta-data will contain information about what tables and columns the databases have along with their types and the orderings of the values.
 
-多建几个缓存池，可有效减少锁竞争并提升局部性。下面说两种将页映射到缓存池中的方法：
+Most DBMSs store their catalog inside of themselves in the format that they use for their tables. They use special code to “bootstrap” these catalog tables.
 
-- Object IDs：把数据的ID拓展，使之包括元数据。然后让每个东西（object）都去对应的缓存池。
-- Hashing： Hash 一下`page id`，然后用该结果找到对应的缓存池。
+## 2 Workloads
 
-### Pre-fetching
+There are many different workloads for database systems. By workload, we are referring to the general nature of requests a system will have to handle. This course will focus on two types: Online Transaction Processing and Online Analytical Processing.
 
-DBMS可以针对 query plan 预先缓存页。比如：在前一个的页正在被处理的时候，后一个的页就可以被预先取出放到缓存池里。这个方案在对大量的页连续读写时被广泛采用。
+### OLTP: Online Transaction Processing
 
-### Scan Sharing
+An OLTP workload is characterized by fast, short running operations, simple queries that operate on single entity at a time, and repetitive operations. An OLTP workload will typically handle more writes than reads.
 
-Query Cursor可以在多个Query之间共享，比如下面两个query：
+An example of an OLTP workload is the Amazon storefront. Users can add things to their cart, they can make purchases, but the actions only affect their account.
 
-```sql
-SELECT SUM(num) FROM A;
-SELECT AVG(num) FROM A;
-```
+### OLAP: Online Analytical Processing
 
-假设表A共有5页，第一条query已经执行到了第3页，第二条才刚开始。
+An OLAP workload is characterized by long running, complex queries, reads on large portions of the database. In OLAP worklaods, the database system is analyzing and deriving new data from existing data collected on the OLTP side.
 
-如果第二条也从头开始的话，在缓存池不够大的情况下，可能会驱逐即将要读的页（由第一条语句缓存的）。这样的话，基本少第二条query的所有页都需要从硬盘读，所以让第一条和第二条共用一个cursor。一起读完后，第二条需要再从头开始把没有读上的读了。
+An example of an OLAP workload would be Amazon computing the five most bought items over a one month period for these geographical locations.
 
-### Buffer Pool Bypass
+### HTAP: Hybrid Transaction + Analytical Processing
 
-对表的连续读写可以不放在缓存池里，借此来避免开销（因为可能只有这一个query用，但它却把缓存池几乎刷新了一遍）。相应地，把这些数据放在本地（线程里）。这对于处理连续分布在硬盘上的一大串页很有用，对于临时数据也很有用（如sorting，joins）
+A new type of workload which has become popular recently is HTAP, which is like a combination which tries to do OLTP and OLAP together on the same database.
 
-## 5 OS Page Cache
+## Storage Models
 
-由于大多数硬盘操作都要走OS API。除非特别说明，否则OS就会在文件系统中进行缓存。
+There are different ways to store tuples in pages. We have assumed the n-ary storage model so far.
 
-大多数 DBMS 都会用 *direct I/O* 来说明不希望OS的文件系统进行缓存，避免额外的开销。
+### N-Ary Storage Model (NSM)
 
-Postgres 是一个为数不多的、使用OS文件系统缓存的数据库系统。
+In the n-ary storage model, the DBMS stores all of the attributes for a single tuple contiguously in a single page, so NSM is also known as a “row store.” This approach is ideal for OLTP workloads where requests are insert-heavy and transactions tend to operate only an individual entity. It is ideal because it takes only one fetch to be able to get all of the attributes for a single tuple.
 
-## 6 Buffer Replacement Policies
+**Advantage:**
 
-当缓存池不够用了，DBMS 就必须决定驱逐哪一页。替换策略的实现目标是更高的正确性、更快及更小的元数据额外开销。
+- Fast inserts, updates, and deletes.
+- Good for queries that need the entire tuple.
 
-### Least Recently Used
+**Disadvantages:**
 
-给每一页都维护一个最近访问的时间戳。驱逐页时，DBMS会驱逐一个最久不用的页。
+Not good for scanning large portions of the table and/or a subset of the attributes. This is because it pollutes the buffer pool by fetching data that is not needed for processing the query.
 
-### CLOCK
+<div style="text-align:center"><img src="./assets/RowStore.svg"></div>
 
-这就是实验要用的。它与LRU类似，每一页都有个访问位，如果这一页被访问（读或写），则就把这个参考位置1.
+### Decomposition Storage Model (DSM)
 
-在驱逐的时候，从**当前位置**（不是从头）开始，如果：
+In the decomposition storage model, the DBMS stores a single attribute (column) for all tuples contiguously in a block of data. Thus, it is also known as a “column store.” This model is ideal for OLAP workloads with many read-only queries that perform large scans over a subset of the table’s attributes.
 
-- 参考位为1：把参考位置0，去看下一页
-- 参考位为0：直接驱逐（还有可能的写回）
+**Advantages:**
 
-如果转了一圈发现所有的参考位都为1，由于已经把开始的1置为0了，所以可以驱逐开始位置的页。指向页的指针就像时针一样转动，可以看原视频获得更佳理解。
+- Reduces the amount of wasted work during query execution because the DBMS only reads the data that it needs for that query.
+- Enables better compression because all of the values for the same attribute are stored contiguously.
 
-### Alternatives
+**Disadvantages:**
 
-由于LRU和CLOCK在 *sequential flooding* 的时候表现不佳：有的数据可能读一下就不要了，有的数据要反复读，但是新读经来的、读一下的数据的时间戳比要老的、需要反复读的数据更大，故而优先驱逐需要的数据，而不是不需要的数据。换言之，最近使用过的数据可能不是我们想要的数据。针对这个问题，有三种方法：
+- Slow for point queries, inserts, updates, and deletes because of tuple splitting/stitching.
 
-- LRU-K：记录每一页的最近K次访问时间，并计算它们之间的时间差。
-- localization： DBMS基于每一个query来驱逐页，不驱逐别的query的页。
-- priority hints：给每一页打上优先级。
+To put the tuples back together when using a column store, there are two common approaches: The most commonly used approach is *fixed-length offsets*. Assuming the attributes are all fixed-length, the DBMS can compute the offset of the attribute for each tuple. Then when the system wants the attribute for a specific tuple, it knows how to jump to that spot in the file from the offest. To accommodate the variable-length fields, the system can either pad fields so that they are all the same length or use a dictionary that takes a fixed-size integer and maps the integer to the value.
 
-### Dirty Pages
+A less common approach is to use *embedded tuple ids*. Here, for every attribute in the columns, the DBMS stores a tuple id (ex: a primary key) with it. The system then would also store a mapping to tell it how to jump to every attribute that has that id. Note that this method has a large storage overhead because it needs to store a tuple id for every attribute entry.
 
-在驱逐时，如果页被写过，在写回时需要写硬盘，这样就会很慢。如果有两个页可以驱逐，那么优先选没有被写过的页驱逐。
-
-但是，早晚都要驱逐的，这个写操作是否无法避免呢？我们可以通过 *background writing* 来避免这个问题：DBMS在后台会周期性的遍历页表，并把脏页写回，写完之后把脏位置0.
+<div style="text-align:center"><img src="./assets/ColStore.svg"></div>

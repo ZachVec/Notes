@@ -1,84 +1,113 @@
 ---
-title : Lecture 07: Tree Indexes I
+title : Lecture 06: Hash Tables
 author: vector
-source: https://15445.courses.cs.cmu.edu/fall2020/notes/07-trees1.pdf
+source: https://15445.courses.cs.cmu.edu/fall2020/notes/06-hashtables.pdf
 ---
 
-# Lecture 07: Tree Indexes I
+# Lecture 06: Hash Tables
 
-## 1 Table Indexes
+## 1 Data Structures
 
-There are a number of different data structures one can use inside of a database system for purposes such as internal meta-data, core data storage, temporary data structures, or table indexes. For table indexes, which may involve queries with range scans.
+DBMS内部会用各种数据结构来维护系统内部的各个部分。比如：
 
-<mark>A *table index* is a replica of a subset of a table’s columns that is organized and/or sorted for efficient access using a subset of those attributes.</mark> So instead of performing a sequential scan, the DBMS can lookup the table index’s auxiliary data structure to find tuples more quickly. The DBMS ensures that the contents of the tables and the indexes are always logically in sync.
+- 内部的元数据：这些数据记录着数据库系统的状态。如：页表、页目录等。
+- 存储的数据：数据结构也会用来存储数据库中的的数据。
+- 临时的数据结构：DBMS为了加快query的执行速度，会建立一些临时性的数据结构。比如join时的哈希表。
+- 表索引：用来帮助更容易找到特定记录的辅助性数据结构。
 
-There exists a trade-off between the number of indexes to create per database. Although more indexes makes looking up queries faster, indexes also use storage and require maintenance. It is the DBMS’s job to figure out the best indexes to use to execute queries.
+设计上要考虑两个东西来决定在DBMS中使用哪种数据结构：
 
-## 2 B+Tree
+- 数据是如何组织的：我们要搞清楚，为了更高效的访问数据，我们要如何存、存什么？
+- 并发：我们还要考虑到如何在不出问题的情况下让多个线程同时访问数据结构。
 
-<mark>A *B+Tree* is a self-balancing tree data structure that keeps data sorted and allows searches, sequential access, insertion, and deletions in *O(log(n))*.</mark> It is optimized for disk-oriented DBMS’s that read/write large blocks of data.
+## 2 哈希表
 
-Almost every modern DBMS that supports order-preserving indexes uses a B+Tree. There is a specific data structure called a *B-Tree*, but people also use the term to generally refer to a class of data structures. The primary difference between the original *B-Tree* and the B+Tree is that *B-Trees* stores keys and values in all nodes, while B+ trees store values only in leaf nodes. Modern B+Tree implementations combine features from other *B-Tree* variants, such as the sibling pointers used in the B<sup>link</sup>-Tree.
+哈希表就是一个可以把*键*映射到*值*的关联性（key-value associative）数组。它可以提供`O(1)`的平均时间复杂度（最坏情况`O(n)`），和`O(n)`的空间复杂度。注意即使是`O(1)`的平均时间复杂度，常数因子的优化也是真实世界中非常需要考虑的。
 
-![Figure 1: B+ Tree diagram](./assets/BPlusTreeDiagram.svg)
+哈希表的实现分为两个部分：
 
-Formally, a B+Tree is an M-way search tree with the following properties:
+- 哈希函数：哈希函数把取值范围比较大的键映射到一个小范围的域中。可以用它来计算出索引，进而索引到数组中。我们需要在处理速度和冲突率中进行取舍，最合适的设计在中间位置。
+  在一个极端，如果哈希函数只会返回常数，这当然会很快，但是每一个键都是冲突的。
+  另一个极端，如果哈希函数必要完美，没有冲突，它就会花很长时间来计算。
+- 哈希模式：就是处理哈希冲突的方法。此时我们需要在分配大的哈希表来减少冲突，还是在冲突发生时多执行一些指令之间进行取舍。
 
-- It is perfectly balanced (i.e., every leaf node is at the same depth).
-- Every inner node other than the root is at least half full (M/2 − 1 <= num of keys <= M − 1).
-- Every inner node with k keys has k+1 non-null children.
+## 3 哈希函数
 
-Every node in a B+Tree contains an array of key/value pairs. The keys in these pairs are derived from the attribute(s) that the index is based on. The values will differ based on whether a node is an inner node or a leaf node. For inner nodes, the value array will contain pointers to other nodes. Two approaches for leaf node values are record IDs and tuple data. Record IDs refer to a pointer to the location of the tuple. Leaf nodes that have tuple data store the the actual contents of the tuple in each node.
+哈希函数接收一个*键*作为参数，返回这个*键*对应的整数表示。函数的输出时唯一的，即对于相同的输入，总会产生一样的输出。
 
-Arrays at every node are (almost) sorted by the keys.
+DBMS不会使用加密型哈希函数（如SHA-256），因为不需要。这些函数主要是在DBMS内部（In-memory）使用，因此信息不会泄漏到系统外部（因为这些数据不是durable的）。
 
-> Visualization of B+ Tree operations including insert, delete and etc. [Click here to start!](https://www.cs.usfca.edu/~galles/visualization/BPlusTree.html)
+总体上来说，我们只关心哈希函数的速度和冲突率。目前最棒的哈希函数就是来自Facebook的`XXHash3`。
 
-### Insertion
+## 4 静态哈希方法
 
-To insert a new entry into a B+Tree, one must traverse down the tree and use the inner nodes to figure out which leaf node to insert the key into.
+静态哈希模式的哈希表大小是固定的。这就意味着如果DBMS用光了哈希表的所有位置时，哈希表就要重建一个更大的哈希表，这个代价非常大。一般来说新的哈希表是原来哈希表的两倍大。
 
-1. Find correct leaf *L*.
-2. Add new entry into *L* in sorted order:
-   - If *L* has enough space, the operation is done.
-   - Otherwise split *L* into two nodes *L* and *L<sub>2</sub>*. Redistribute entries evenly and copy up middle key.  Insert index entry pointing to *L<sub>2</sub>* into parent of *L*.
-3. To split an inner node, redistribute entries evenly, but push up the middle key.
+为了减少不必要的比较，减少哈希冲突很重要。一般来说，我们会使用预期大小的两倍作为哈希表的大小。
 
-### Deletion
+除此之外，还有现实中一般不成立的假设：
 
-Whereas in inserts we occasionally had to split leaves when the tree got too full, if a deletion causes a tree to be less than half-full, we must merge in order to re-balance the tree.
+1. 元素个数提前已知
+2. 键都不一样
+3. 存在一个完美哈希函数（不同的键不冲突）
 
-1. Find correct leaf *L*.
-2. Remove the entry:
-   - If *L* is at least half full, the operation is done.
-   - Otherwise, you can try to redistribute, borrowing from sibling.
-   - If redistribution fails, merge *L* and sibling.
-3. If merge occurred, you must delete entry in parent pointing to *L*.
+因此，我们需要恰当地选择哈希函数和哈希模式。
 
-### Selection Conditions
+### 4.1 linear probe hashing
 
-Because B+Trees are in sorted order, look ups have fast traversal and also do not require the entire key. The DBMS can use a B+Tree index if the query provides any of the attributes of the search key. This differs from a hash index, which requires all attributes in the search key.
+linear probe hashing 是说在哈希冲突发生时，一直往后看，如果找到就插入。如果没找到（回到原位置），那就扩容。
 
-![Figure 2: To perform a prefix search on a B+Tree, one looks at the first attribute on the key, follows the path down and performs a sequential scan across the leaves to find all they keys that one wants.](./assets/PrefixSearch.svg)
+### 4.2 robin hood hashing
 
-### Duplicate Keys
+robin hood 是中世纪英国一个民间故事中的主角，他是一个劫富济贫的侠盗。本方法和linear probe hashing 类似，但是多了两个概念。在介绍这两个概念之前，我们先定义一个词，原位置：指经过哈希后得到的索引指向的位置。
 
-There are two approaches to duplicate keys in a B+Tree.
+- rich key：在一次比较中，离原位置较近的键。
+- pool key：相应地，离原位置比较远的键。
 
-The first approach is to append record IDs as part of the key. Since each tuple’s record ID is unique, this will ensure that all the keys are identifiable.
+然后在linear probe hashing基础上遵循“劫富济贫”的原则，对于每一个想要占用的位置，如果待插入的键键比该位置上已存在的键更“穷”，则占有该位置。相应地，换该位置上比较“富”的键继续往后看要插在哪里。
 
-The second approach is to allow leaf nodes to spill into overflow nodes that contain the duplicate keys. Although no redundant information is stored, this approach is more complex to maintain and modify.
+### 4.3 Cuckoo hashing
 
-### Clustered Indexes
+起名源于布谷鸟的习性——鸠占鹊巢，Cuckoo就是布谷鸟。鸠，即是布谷鸟，也即杜鹃。
 
-The table is stored in the sort order specified by the primary key, can either be heap- or index-organized storage.
+一般有两个哈希函数（也可以多个），其实是一个哈希函数，但是有两个种子（seed），还有两个哈希表。对于某一个键来说，在经过 Hash<sub>1</sub>(key)之后：
 
-Some DBMSs always use a clustered index, they will automatically make a hidden row id primary key if a table doesn’t have an explicit one, but other DBMS cannot use them at all.
+- 如果在table<sub>1</sub>中，这个没有被占：那就直接放入其中。
+- 如果被占了，那就进行 Hash<sub>2</sub>(key)：如果在table<sub>2</sub>中没有被占，那就放入其中。
+- 如果还是被占了，则进行“鸠占鹊巢”，鹊就只能再找其它巢：将该键放入该位置，同时将原键取出。
+  - 取出后对该取出的键进行 Hash<sub>1</sub>(key’)，看能不能把它放到table<sub>1</sub>中。
+  - 如果可以，那就放。
+  - 如果不行，那就按如上步骤一直“鸠占鹊巢”即可。
+- 如果找了一圈还没找到，那说明该扩容了。扩容即可。
 
-### Heap Clustering
 
-Tuples are sorted in the heap’s pages using the order specified by a clustering index. DBMS can jump directly to the pages if clustering index’s attributes are used to access tuples.
 
-### Index Scan Page Sorting
+## 5 Dynamic hashing schemes
 
-Since directly retrieving tuples from an unclustered index is inefficient, the DBMS can first figure out all the tuples that it needs and then sort them based on their page id.
+静态哈希方法要求DBMS事先知道待存储元素的数量，否则它就需要在需要的时候重建整个表。
+
+动态哈希方法则可以按需变换大小，而不需要重建整个表。动态哈希方法以要么最大化读、要么最大化写为代价的方式来改变大小。
+
+### 5.1 chained hashing
+
+这种是最常见的动态哈希方法。DBMS会给哈希表中每一格都维护一个链式桶。哈希到相同位置的键都插到那个格子的链式桶中。
+
+### 5.2 Extendible hashing
+
+chained hashing的增强版。这种方法允许多个格子映射到同一个链式桶。核心思想就是通过分裂并增加需要检查的比特位数来使得链式桶重新平衡。
+
+- DBMS维护着一个全局比特位数，以及给每一个桶都维护这一个本地比特位数。
+- 当一个桶满了之后，DBMS就会让这个桶分裂，增加这个桶的本地比特位数（如果和全局比特位数一样，那就全局和这个本地比特位数一起增加），然后新的位数重新分配这个桶中的元素，并让哈希表中新增加的格子指向正确的位置。
+
+如下图所示：
+
+<div style="text-align:center"><img src="./assets/ExtendibleHashing.svg"></div>
+
+### 5.3 Linear Hashing
+
+与之前不一样，Linear Hashing在桶发生溢出时并不是分裂溢出的桶，而是分裂`split pointer`指向的桶。溢出的标准取决于具体实现。
+
+- 当有桶溢出时，通过增加一个格子来分裂`split pointer`指向的桶，并新建一个哈希函数。
+- 如果哈希函数映射到`split pointer`之前的格子，说明它的格子分裂过，那就使用新建的哈希函数。
+- 当`split pointer`到最后一个格子后，删除原来的哈希函数并用一个新的替换它。
+
