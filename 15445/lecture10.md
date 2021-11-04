@@ -5,74 +5,93 @@ source: https://15445.courses.cs.cmu.edu/fall2019/notes/10-sorting.pdf
 ---
 
 # Lecture 10: Sorting & Aggregation Algorithms
+## Overview
 
-## 1 排序
+### Course Status
 
-由于在关系模型中的数据是无序的，而排序又在 `ORDER BY`、`GROUP BY`、`JOIN` 及 `DISTINCT` 操作符中可能被用到，所以我们需要排序。
+整个数据库从底层到顶端总共分为：Disk Manager, Buffer Pool Manager, Access Methods (i.e. B+ Tree), Operator Execution 和 Query Planning. 这节课讲到 Operator Execution. 
 
-我们可以通过扫描 聚合B+ 树的叶结点来加速排序。但在非聚合 B+ 树中这样做会导致大量的磁盘随机读取，所以不建议在非聚合 B+ 树中不建议使用。
+### Query Plan
 
-如果待排序的数据能够全部放到内存中，那 DBMS 直接使用标准排序算法即可，如快排。如果无法全部放入，则 DBMS 需要使用外部排序。外部排序能够按需从硬盘取用数据，且相较于随机 I/O 更偏向于顺序 I/O。
+SQL 中的操作符在执行的时候可以被排成如下的一颗树，数据从底向顶流动，根节点的输出就是一次 Query 结果。
 
-## 2 外部归并排序
+![query plan](./lecture10.assets/query_plan.png)
 
-分治排序算法把数据集分散到不同*组*（runs）中，然后分别排序。它可以把不同*组*(（runs）的数据按需写到硬盘，然后一次性把它们读到内存。分为两个阶段：
+### Disk-oriented DBMS
 
-**Phase #1 – 排序**: 每次从内存中读取一小块，排序，然后写回内存。
+由于这门课学的是 Disk-oriented DMBS，因此我们不能假设表能整个放进内存，同样也不能假设 Query 的结果能整个放进内存。
 
-**Phase #2 – 归并**: 把很多已经有序的小块子文件（由于在硬盘上，所以叫做文件）组合成一个单独的大文件。
+我们要使用 缓存池 来实现溢出到磁盘的算法。除此之外，我们应该要用能够最大化连续读写次数的算法。
 
-> 在接下来的叙述中，假设缓冲池大小为 B 页，共有 N 页数据待排序。
+### Today's Agenda
 
-### 双路归并排序
+本节主要讲了 External Merge Sort 和 Aggregations.
 
-1. Pass #0：每次读取 B 页连续的数据到内存。排序，然后把它们写回内存。有序页的集合叫做*组*（run）。
-2. Pass #1,2,3...：递归地将一对 *组* 合并成两倍长的组。
+## External Merge Sort
 
-Pass 的次数：1 + ⌈log<sub>2</sub>N⌉
+> 为什么要排序？表中的 Tuples 没有特定的顺序，但是 Query 常常想要以特定顺序取出它们。
+>
+> - `DISTINCT`：如果有顺序，去重的时候很方便。
+> - 数据有序时，把它们从磁盘加载到 B+ 树会很快。
+> - 聚合：`GROUP BY` 等。
+>
+> 如果数据能整个放进内存，那直接使用像快排这样的标准排序算法即可。但如果不能完整地放进内存，那就得用一些其他方法，且必须可以被度量由磁盘读写而带来的开销。
 
-总的 I/O 次数：2 * (# of Passes)
+External Merge Sort 使用了是一个使用了分治的排序算法，它把数据分成许多 *run*，然后分别排序。总共有两个阶段：
 
-### 一般（K-路）归并排序
+- Sorting: 每次从磁盘中读取能放进内存的数据，排序，然后写回磁盘。
+- Merging: 把上一阶段的结果组合起来，即有序的、较小的 *run* 组合成一个大的 *run*.
 
-1. Pass #0：用 B 个缓冲页，产生了 N / B 个大小为 B 的组。
-2. Pass #1,2,3...：递归地合并 B - 1 个组（有一个组用来输出，所以一次只能合并 B - 1 个组）
+可以看到有些类似于 Merge Sort.
 
-Pass 的次数：1 +  ⌈log<sub>B-1</sub>⌈N / B⌉⌉
+### 2 - Way External Merge Sort
 
-总共的 I/O 次数：2N * (# of passes)
+> 假设缓冲池大小为 *B=3* 页，共有 *N* 页数据待排序。
 
-### 双缓冲忧患 (预取)
+- **Pass #0**：每次从磁盘上读取 *B* 页数据到内存，排序，然后写回磁盘。
+- **Pass #1,2,3...**：递归地将 2 runs 合并成 1 个两倍于原先大小的 run.
+- **Pass 的次数**：1 + ⌈ ㏒<sub>2</sub>N ⌉.
+- **总的 I/O 次数**：2 × (# of passes)
 
-我们可以在处理这一轮的数据时，把下一轮的数据在后台取好，然后放到缓冲池中。这可以通过持续使用（而不是断断续续使用）来减少等待 I / O 的时间。
+![external_mergesort](./lecture10.assets/external_mergesort.png)
 
-## 3 聚合
+### k-Way External Merge Sort
 
-在 Query Plan 中的聚合算符会使一条或多条数据变成一个标量值（就是由多列变成一列）。有两种方法来实现聚合：排序、哈希。
+> 如果缓冲池大小为 *B>3* 页，共有 *N* 页数据待排序
 
-### 排序
+- **Pass #0**：用 *B* 个缓冲页，产生了 ⌈ N / B ⌉ 个大小为 B 的 run，最后一个 run 可能没这么大。
+- **Pass #1,2,3...**：递归地合并，每次合并 B - 1 个 run（B 页中有 1 页用来用来输出，所以一次只能合并 B - 1 个 run）
+- **Pass 的次数**：1 +  ⌈ ㏒<sub>B-1</sub> ⌈N / B⌉ ⌉
+- **总共的 I/O 次数**：2N × (# of passes)
 
-DBMS 首先用 `GROUP BY` 的键排序。如果数据能放进缓冲池，就用内存内的排序算法（如快排），否则就用外部归并排序。
+### Double Buffering Optimization(Prefetching)
 
-然后 DBMS 会通过顺序扫描有序数据来计算出聚合的结果，最后的数据关于键有序。
+在处理当前 *run* 的时候，其他线程可以预先把下一个要处理的 *run* 先加载进内存。这样可以持续的使用磁盘，进而有效地减少 IO 请求所需的等待时间。
 
-### 哈希
+### Using B+ Trees for Sorting
 
-在计算聚合时，哈希比排序需要更少的计算量。DBMS 会在它扫描整个表的时候产生一个临时哈希表。对于每条数据，检查它的键是否已经存在于哈希表中，然后进行对应的修改。
+其实仔细想想 B+ 树的键也是有序的，如果需要排序的键刚好是某个已经有的 B+ 树索引的键，那不就不用排序了？但是我们还是需要考虑一个问题，关于这个键的 B+ 树是否是 Clustered B+ 树.
 
-如果哈希表太大了，放不进内存，那么 DBMS 就得把它写到硬盘：
+> 所谓 Clustered B+ 树，就是这个 B+ 树对应的数据在磁盘上的顺序与 B+ 树中这个键的顺序一致，否则就是 Unclustered B+ Tree。
 
-- Phase #1 - 分散：用哈希函数 H<sub>1</sub> （以键为输入）把数据分散到不同的部分。当写满时就写至硬盘。
-- Phase #2 - 再哈希：对于硬盘中的每一部分，把它的页读入内存，然后基于哈希函数 H<sub>2</sub> （H<sub>1</sub> ≠ H<sub>2</sub>）建立内存中的哈希表。然后遍历哈希表中的每一个桶，计算所有哈希值一样的数据的聚合。这里假设每一部分都能放到内存。
+如果是 Clustered B+ 树，则磁盘顺序与树中的顺序一致，可以连续读写，那非常好。但如果是 Unclustered B+ 树，那数据在磁盘上就不是顺序的了，这样的话在最坏情况下可能一个 tuple 一次 IO，这种情况就用外部排序。
 
-在 *Phase #1 - 分散* 阶段，如果缓冲池总共有 B 页，则有 B-1 页分给 B-1 个部分，还有一页用来输入。
+## External Hashing Aggregate
 
-在 *Phase #2 - 再哈希* 阶段，DBMS 可以存储 `GroupByKey` → `RunningValue` 对来计算聚合。`RunningValue` 的内存取决于聚合函数。如果要在哈希表中插入新的数据：
+> 把来自多个 tuple 的相同值压缩成一个 attribute。有两种方法来实现聚合：排序、哈希。排序就像上文提到的那样排就好。当然，如果数据能放进内存，那就直接快排即可。排序的好处自然是结果有序，但是如果并不要求结果有序，只要求 `DISTINCT` 呢（或是其他聚合，如 `SUM`，`AVG`）？这样好像没必要排序了，毕竟排序还是比较慢。这样我们就可以使用哈希。
 
-- 如果它与某个 `GroupByKey` 匹配上了，那就更新 `GroupByKey` 对应的 `RunningValue`。
-- 否则就插入新的 `GroupByKey` → `RunningValue` 对。
+以下假设我们能够使用 B 页 Buffer。外部哈希聚合也分为两个部分，Partition 和 ReHash：
 
-> 这里的 `GroupByKey` 就是 SQL 中 `Group By` 后跟的键。如果没有 `Group By` 那就所有的为一组，直接聚合就行。这里的 `RunningValue` 指的是为了计算出最终聚合的结果所需要维护的数据。比如，
+- **Phase #1 Partition**：这个阶段用 B-1 页 Buffer 来分组，1 页 Buffer 来输入
+  - 使用哈希函数 `h1` 对数据分组，某个 Buffer 写满了 ，就把 Buffer 写磁盘，腾出位置继续写。
+  - 这样可以确保键相同的 tuple 肯定在一个组内。
+- **Phase #2 - ReHash**：使用哈希函数 `h2` (`h2 != h1`) 在组内对键再次 hash，将当前组称为 partition
+  - 由于不同键的 hash 值不一样，这确保不同键不会更新相同的 `RunningValue`
+  - 遍历 partition 内的 tuple，更新对应的 `RunningValue`
+  - 这里需要假设每一个 partition 的临时 hash 表能够放进内存
+  - 完成一个 partition 的 ReHash，把聚合结果写到磁盘。这个 partition 的哈希表就可以扔了。
+
+> 这里的 `RunningValue` 指的是为了计算出最终聚合的结果所需要维护的数据。比如，
 >
 > | `Aggregation` |  `RunningValue`  |
 > | :-----------: | :--------------: |
@@ -81,4 +100,3 @@ DBMS 首先用 `GROUP BY` 的键排序。如果数据能放进缓冲池，就用
 > |     `SUM`     |      `SUM`       |
 > |     `MAX`     |      `MAX`       |
 > |     `MIN`     |      `MIN`       |
-
